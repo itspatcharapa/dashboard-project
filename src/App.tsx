@@ -6,6 +6,7 @@ import Header from "./components/Header";
 import MetricsCards from "./components/MetricsCards";
 import Charts from "./components/Charts";
 import DataExplorer from "./components/DataExplorer";
+import { parseCSVAndMap, processRows, fallbackRows } from "./utils/sheetParser";
 
 const INITIAL_SHEET_ID = "1Rfsv4rmmPu_rZYlgkjr85fucY2s1CUWDWudG4RPlk7U";
 
@@ -24,21 +25,49 @@ export default function App() {
   const fetchDashboardData = async (forceSheetId?: string) => {
     setIsLoading(true);
     setError(null);
+    const activeId = forceSheetId || sheetId;
+    
     try {
-      const activeId = forceSheetId || sheetId;
-      const response = await fetch(`/api/dashboard-data?sheetId=${activeId}`);
-      if (!response.ok) {
-        throw new Error(`ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์หลักได้ (HTTP ${response.status})`);
+      // 1. Primary Strategy: Try to fetch and parse Google Sheet CSV directly in the browser
+      console.log(`[APP] Trying primary direct client-side fetch for sheet: ${activeId}`);
+      const directUrl = `https://docs.google.com/spreadsheets/d/${activeId}/export?format=csv&gid=0`;
+      
+      const clientResponse = await fetch(directUrl);
+      if (clientResponse.ok) {
+        const csvText = await clientResponse.text();
+        const parsedData = parseCSVAndMap(csvText);
+        setData(parsedData);
+        setLastUpdated(new Date());
+        setIsLoading(false);
+        return;
       }
-      const dashboardData: DashboardData = await response.json();
-      setData(dashboardData);
-      setLastUpdated(new Date());
-    } catch (err: any) {
-      console.error("[APP] Fetch dashboard error:", err);
-      setError(
-        err.message || 
-        "เกิดข้อผิดพลาดในการดึงข้อมูลจาก Google Sheets กรุณาตรวจสอบลิงก์ของท่าน หรือตั้งค่าชีตให้อนุญาตการเข้าถึงเป็นสาธารณะ"
-      );
+      
+      throw new Error(`Direct fetch status: ${clientResponse.status}`);
+    } catch (clientErr) {
+      console.warn("[APP] Primary client-side fetch failed, trying secondary backend API route...", clientErr);
+      
+      try {
+        // 2. Secondary Strategy: Fallback to local Express Backend API route
+        const apiResponse = await fetch(`/api/dashboard-data?sheetId=${activeId}`);
+        if (!apiResponse.ok) {
+          throw new Error(`ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์หลักได้ (HTTP ${apiResponse.status})`);
+        }
+        const dashboardData: DashboardData = await apiResponse.json();
+        setData(dashboardData);
+        setLastUpdated(new Date());
+      } catch (backendErr: any) {
+        console.error("[APP] Secondary backend fetch failed:", backendErr);
+        
+        // 3. Resilient Fallback: Load offline high-quality fallback data
+        console.warn("[APP] Both routes failed. Loading high-quality mock data for user experience.");
+        const fallbackData = processRows(fallbackRows);
+        setData(fallbackData);
+        setLastUpdated(new Date());
+        
+        setError(
+          "เกิดข้อผิดพลาดในการดึงข้อมูลสดจาก Google Sheets แนะนำให้เช็คสิทธิ์แชร์ไฟล์เป็นสาธารณะ (แอปสลับเข้าสู่โหมดจำลองข้อมูลตัวอย่างเพื่อให้คุณใช้งานต่อได้ทันที)"
+        );
+      }
     } finally {
       setIsLoading(false);
     }
