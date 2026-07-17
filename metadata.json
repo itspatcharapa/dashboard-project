@@ -1,0 +1,6 @@
+{
+  "name": "Google Sheet Project Dashboard",
+  "description": "A high-performance interactive dashboard aggregating budgets, completion rates, locations, and tasks from a Google Sheet.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
